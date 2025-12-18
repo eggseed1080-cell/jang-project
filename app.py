@@ -21,7 +21,7 @@ def get_google_client():
         creds = ServiceAccountCredentials.from_json_keyfile_name("gsheet_key.json", scope)
     return gspread.authorize(creds)
 
-# --- [핵심 로직 1] 회원 정보 관리 (수정된 안전 버전) ---
+
 # --- [핵심 로직 1] 회원 정보 관리 (한국 시간 적용) ---
 def update_member_info(phone, name, region, address):
     try:
@@ -240,6 +240,7 @@ with tab2:
             st.dataframe(df)
             
             st.info("💡 팁: 실제 엑셀 시트는 '회원관리'와 '주문내역'으로 나뉘어 있지만, 여기서는 합쳐서 보여줍니다.")
+
 
 
 
