@@ -8,7 +8,17 @@ import datetime
 # ==========================================
 def get_google_client():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    creds = ServiceAccountCredentials.from_json_keyfile_name("gsheet_key.json", scope)
+    
+    # 1. 스트림릿 클라우드의 비밀 금고(secrets)에서 키를 가져옴
+    # (로컬에서 실행할 때는 .streamlit/secrets.toml 파일이 필요하거나, 기존 json 방식을 써야 함)
+    try:
+        # 배포용 코드
+        key_dict = st.secrets["gcp_service_account"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
+    except:
+        # 로컬 테스트용 (내 컴퓨터에서 돌릴 때)
+        creds = ServiceAccountCredentials.from_json_keyfile_name("gsheet_key.json", scope)
+        
     return gspread.authorize(creds)
 
 def add_batch_to_sheet(rows_data):
@@ -127,4 +137,5 @@ if submit_btn:
                 st.success(f"🎉 저장 완료! 총 {count_total}건의 주문이 등록되었습니다.")
                 st.balloons()
             else:
+
                 st.error(f"저장 실패: {res}")
