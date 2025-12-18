@@ -141,36 +141,44 @@ with tab1:
             
             weeks_data.append({'date':t_date, 'moo':m, 'ga':g, 'berry':b, 'greek':k})
 
+    # [수정된 버튼 로직] 에러 체크 기능 강화
     if st.button("🚀 주문 및 회원정보 저장", type="primary", use_container_width=True):
         if not phone or not name or not address:
-            st.error("전화번호, 이름, 주소는 필수입니다!")
+            st.error("🚨 전화번호, 이름, 주소는 필수 입력 항목입니다!")
         else:
-            with st.spinner("회원 정보 확인 및 주문 저장 중..."):
-                # 1. 회원 정보 업데이트 (혹은 신규등록)
+            with st.spinner("처리 중..."):
+                # 1. 회원 정보 처리 (결과 확인)
                 mem_res = update_member_info(phone, name, region, address)
                 
-                # 2. 주문 데이터 추리기
-                valid_orders = []
-                for order in weeks_data:
-                    if (order['moo']+order['ga']+order['berry']+order['greek']) > 0:
-                        valid_orders.append(order)
-                
-                if not valid_orders:
-                    st.warning("상품을 선택해주세요.")
+                # [중요] 회원 등록에 문제가 생기면 여기서 즉시 중단하고 에러 메시지 띄움!
+                if mem_res not in ["new", "updated"]:
+                    st.error(f"🚨 회원 정보 저장 실패: {mem_res}\n(주문이 저장되지 않았습니다)")
                 else:
-                    # 3. 주문 저장
-                    ord_res = add_orders(phone, valid_orders)
+                    # 2. 주문 데이터 추리기
+                    valid_orders = []
+                    for order in weeks_data:
+                        if (order['moo']+order['ga']+order['berry']+order['greek']) > 0:
+                            valid_orders.append(order)
                     
-                    if ord_res == True:
-                        msg = "🎉 주문 완료!"
-                        if mem_res == "new": msg += " (신규회원 등록됨)"
-                        elif mem_res == "updated": msg += " (회원정보 갱신됨)"
-                        st.success(msg)
-                        st.balloons()
-                        time.sleep(2)
-                        st.rerun()
+                    if not valid_orders:
+                        st.warning("🤔 선택된 상품이 없습니다.")
                     else:
-                        st.error(f"주문 저장 실패: {ord_res}")
+                        # 3. 주문 저장
+                        ord_res = add_orders(phone, valid_orders)
+                        
+                        if ord_res == True:
+                            msg = "🎉 주문이 완료되었습니다!"
+                            if mem_res == "new": 
+                                msg += "\n(✨신규 회원으로 등록되었습니다)"
+                            elif mem_res == "updated": 
+                                msg += "\n(✅회원 정보가 최신으로 변경되었습니다)"
+                            
+                            st.success(msg)
+                            st.balloons()
+                            time.sleep(2)
+                            st.rerun()
+                        else:
+                            st.error(f"❌ 주문 저장 실패: {ord_res}")
 
 with tab2:
     st.header("🔒 관리자 통합 조회")
@@ -186,3 +194,4 @@ with tab2:
             st.dataframe(df)
             
             st.info("💡 팁: 실제 엑셀 시트는 '회원관리'와 '주문내역'으로 나뉘어 있지만, 여기서는 합쳐서 보여줍니다.")
+
