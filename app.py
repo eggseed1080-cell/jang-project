@@ -107,6 +107,9 @@ tab1, tab2 = st.tabs(["📝 주문하기", "🔒 관리자(통합조회)"])
 # --------------------------------------------------------------------------------
 # [탭 1] 고객용 주문 화면 (날짜 개별 수정 기능 추가됨)
 # --------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
+# [탭 1] 고객용 주문 화면 (동기화 기능 강화 버전)
+# --------------------------------------------------------------------------------
 with tab1:
     st.title("🌿 장건강 정기배송 (DB분리형)")
     st.info("고객님은 주문만 하세요. 회원 정보 관리는 알아서 됩니다!")
@@ -123,62 +126,75 @@ with tab1:
     st.subheader("🗓️ 스케줄 설정")
     c_date, c_chk = st.columns([1,2])
     with c_date:
-        # 전체 기준이 되는 시작일
         master_start_date = st.date_input("기준 시작일", datetime.date.today())
     with c_chk:
         st.write("")
         st.write("")
-        # 체크박스: 수량만 통일하고, 날짜는 따로 놀 수 있게 함
+        # [중요] 값이 바뀔 때마다 즉시 새로고침해서 적용하도록 설정
         copy_week1 = st.checkbox("✅ 상품 구성을 4주간 동일하게 적용", value=True)
 
     weeks_data = []
     
-    # 4주치 루프
+    # [핵심 변경] 1주차 값을 저장할 변수 미리 선언
+    w1_moo, w1_ga, w1_berry, w1_greek = 0, 0, 0, 0
+
     for i in range(4):
         w_num = i + 1
-        
-        # [기본값 계산] 기준일 + 7일 * i
         default_date = master_start_date + datetime.timedelta(weeks=i)
         
-        # 박스를 열어둡니다(첫번째 주차만)
-        with st.expander(f"📦 {w_num}주차 설정", expanded=(i==0)):
-            # [NEW] 날짜를 여기서 마음대로 바꿀 수 있게 입력창 생성
-            # value=default_date로 자동 계산된 날짜를 넣어두되, 유저가 수정 가능
+        # 1주차(i=0)인 경우와 나머지(i>0)를 명확히 분리
+        is_first_week = (i == 0)
+        
+        # 박스 열기 (첫째주는 무조건, 나머지는 닫아둠)
+        with st.expander(f"📦 {w_num}주차 설정", expanded=is_first_week):
             col_d, col_prod = st.columns([1, 3])
             
+            # 1. 날짜 선택
             with col_d:
-                # 개별 날짜 선택기
+                # 2주차 이상인데 체크박스 켜져있으면 날짜도 살짝 비활성 느낌 줄수있으나
+                # 날짜는 개별 수정 가능하게 두는 것이 좋음
                 selected_date = st.date_input(
-                    f"{w_num}주차 배송일", 
+                    f"{w_num}주차 날짜", 
                     value=default_date, 
-                    key=f"date_picker_{i}"
+                    key=f"date_{i}"
                 )
                 selected_date_str = selected_date.strftime("%Y-%m-%d")
 
+            # 2. 상품 수량 입력
             with col_prod:
                 c1, c2, c3, c4 = st.columns(4)
                 
-                # 체크박스가 켜져있고 2주차 이상이면 -> 1주차 수량 복사 & 입력 잠금
-                disabled = (copy_week1 and i > 0)
+                # [로직 1] 1주차인 경우 -> 무조건 입력 받음
+                if is_first_week:
+                    m = c1.number_input("무가당", min_value=0, key="w1_m")
+                    g = c2.number_input("가당", min_value=0, key="w1_g")
+                    b = c3.number_input("베리", min_value=0, key="w1_b")
+                    k = c4.number_input("그릭", min_value=0, key="w1_k")
+                    
+                    # 1주차 값을 변수에 저장 (나머지 주차가 갖다 쓰기 위해)
+                    w1_moo, w1_ga, w1_berry, w1_greek = m, g, b, k
                 
-                if disabled:
-                    ref = weeks_data[0] # 1주차 데이터 참조
-                    m = st.number_input(f"무({w_num})", value=ref['moo'], disabled=True, key=f"d_m{i}")
-                    g = st.number_input(f"가({w_num})", value=ref['ga'], disabled=True, key=f"d_g{i}")
-                    b = st.number_input(f"베({w_num})", value=ref['berry'], disabled=True, key=f"d_b{i}")
-                    k = st.number_input(f"그({w_num})", value=ref['greek'], disabled=True, key=f"d_k{i}")
+                # [로직 2] 2주차 이상이고 + 체크박스 ON -> 1주차 값 강제 적용 (수정불가)
+                elif copy_week1:
+                    # key를 다르게 줘서('copy_') 새로 그려지게 함 (그래야 값이 갱신됨)
+                    m = c1.number_input(f"무({w_num})", value=w1_moo, disabled=True, key=f"copy_m{i}")
+                    g = c2.number_input(f"가({w_num})", value=w1_ga, disabled=True, key=f"copy_g{i}")
+                    b = c3.number_input(f"베({w_num})", value=w1_berry, disabled=True, key=f"copy_b{i}")
+                    k = c4.number_input(f"그({w_num})", value=w1_greek, disabled=True, key=f"copy_k{i}")
+                
+                # [로직 3] 2주차 이상이지만 + 체크박스 OFF -> 개별 입력 가능
                 else:
-                    m = st.number_input("무가당", min_value=0, key=f"m{i}")
-                    g = st.number_input("가당", min_value=0, key=f"g{i}")
-                    b = st.number_input("베리", min_value=0, key=f"b{i}")
-                    k = st.number_input("그릭", min_value=0, key=f"k{i}")
-            
-            # 여기서 선택된 날짜(selected_date_str)를 저장합니다.
+                    m = c1.number_input("무가당", min_value=0, value=0, key=f"manual_m{i}")
+                    g = c2.number_input("가당", min_value=0, value=0, key=f"manual_g{i}")
+                    b = c3.number_input("베리", min_value=0, value=0, key=f"manual_b{i}")
+                    k = c4.number_input("그릭", min_value=0, value=0, key=f"manual_k{i}")
+
+            # 리스트에 담기
             weeks_data.append({'date': selected_date_str, 'moo':m, 'ga':g, 'berry':b, 'greek':k})
 
     st.divider()
 
-    # [수정된 버튼 로직] 에러 체크 및 저장
+    # 저장 버튼
     if st.button("🚀 주문 및 회원정보 저장", type="primary", use_container_width=True):
         if not phone or not name or not address:
             st.error("🚨 전화번호, 이름, 주소는 필수 입력 항목입니다!")
@@ -187,7 +203,7 @@ with tab1:
                 mem_res = update_member_info(phone, name, region, address)
                 
                 if mem_res not in ["new", "updated"]:
-                    st.error(f"🚨 회원 정보 저장 실패: {mem_res}\n(주문이 저장되지 않았습니다)")
+                    st.error(f"🚨 회원 정보 저장 실패: {mem_res}")
                 else:
                     valid_orders = []
                     for order in weeks_data:
@@ -198,7 +214,6 @@ with tab1:
                         st.warning("🤔 선택된 상품이 없습니다.")
                     else:
                         ord_res = add_orders(phone, valid_orders)
-                        
                         if ord_res == True:
                             msg = "🎉 주문이 완료되었습니다!"
                             if mem_res == "new": msg += "\n(✨신규 회원 등록됨)"
@@ -224,6 +239,7 @@ with tab2:
             st.dataframe(df)
             
             st.info("💡 팁: 실제 엑셀 시트는 '회원관리'와 '주문내역'으로 나뉘어 있지만, 여기서는 합쳐서 보여줍니다.")
+
 
 
 
