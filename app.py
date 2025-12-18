@@ -23,6 +23,7 @@ def get_google_client():
 
 
 # --- [핵심 로직 1] 회원 정보 관리 (한국 시간 적용) ---
+
 def update_member_info(phone, name, region, address):
     try:
         client = get_google_client()
@@ -240,6 +241,7 @@ with tab2:
             st.dataframe(df)
             
             st.info("💡 팁: 실제 엑셀 시트는 '회원관리'와 '주문내역'으로 나뉘어 있지만, 여기서는 합쳐서 보여줍니다.")
+
 
 
 
