@@ -214,41 +214,49 @@ with tab1:
 
     st.divider()
 
-    # 4. 저장 버튼
+   # 4. 저장 버튼
     if st.button("🚀 주문 및 회원정보 저장", type="primary", use_container_width=True):
         if not phone or not name or not address:
             st.error("🚨 전화번호, 이름, 주소는 필수 입력 항목입니다!")
         else:
-            with st.spinner("처리 중..."):
-                # (1) 회원 정보 저장/업데이트
-                mem_res = update_member_info(phone, name, region, address)
-                
-                if mem_res not in ["new", "updated"]:
-                    st.error(f"🚨 회원 정보 저장 실패: {mem_res}\n(주문이 저장되지 않았습니다)")
-                else:
-                    # (2) 주문 데이터 필터링 (수량이 있는 것만)
-                    valid_orders = []
-                    for order in weeks_data:
-                        if (order['moo'] + order['ga'] + order['berry'] + order['greek']) > 0:
-                            valid_orders.append(order)
+            # [핵심] 여기서 전화번호를 깨끗하게 정리합니다!
+            clean_phone = normalize_phone(phone)
+            
+            # (만약 번호가 너무 짧거나 이상하면 경고 띄우기 기능 추가 가능)
+            if len(clean_phone) < 10:
+                 st.error(f"🚨 전화번호가 올바르지 않습니다: {phone}")
+            else:
+                with st.spinner("처리 중..."):
+                    # 이제부터 모든 로직에는 'phone' 대신 'clean_phone'을 사용합니다.
                     
-                    if not valid_orders:
-                        st.warning("🤔 선택된 상품이 하나도 없습니다.")
+                    # (1) 회원 정보 저장 (정리된 번호로)
+                    mem_res = update_member_info(clean_phone, name, region, address)
+                    
+                    if mem_res not in ["new", "updated"]:
+                        st.error(f"🚨 회원 정보 저장 실패: {mem_res}\n(주문이 저장되지 않았습니다)")
                     else:
-                        # (3) 주문 저장
-                        ord_res = add_orders(phone, valid_orders)
+                        valid_orders = []
+                        for order in weeks_data:
+                            if (order['moo'] + order['ga'] + order['berry'] + order['greek']) > 0:
+                                valid_orders.append(order)
                         
-                        if ord_res == True:
-                            msg = "🎉 주문이 완료되었습니다!"
-                            if mem_res == "new": msg += "\n(✨신규 회원 등록됨)"
-                            elif mem_res == "updated": msg += "\n(✅회원 정보 갱신됨)"
-                            
-                            st.success(msg)
-                            st.balloons()
-                            time.sleep(2)
-                            st.rerun() # 화면 새로고침
+                        if not valid_orders:
+                            st.warning("🤔 선택된 상품이 하나도 없습니다.")
                         else:
-                            st.error(f"❌ 주문 저장 실패: {ord_res}")
+                            # (3) 주문 저장 (정리된 번호로)
+                            ord_res = add_orders(clean_phone, valid_orders)
+                            
+                            if ord_res == True:
+                                msg = "🎉 주문이 완료되었습니다!"
+                                if mem_res == "new": msg += "\n(✨신규 회원 등록됨)"
+                                elif mem_res == "updated": msg += "\n(✅회원 정보 갱신됨)"
+                                
+                                st.success(msg)
+                                st.balloons()
+                                time.sleep(2)
+                                st.rerun()
+                            else:
+                                st.error(f"❌ 주문 저장 실패: {ord_res}")
 
 # --------------------------------------------------------------------------------
 # [탭 2] 사장님 전용 관리자 페이지
@@ -271,4 +279,5 @@ with tab2:
             
             st.divider()
             st.info("💡 엑셀 시트는 '회원관리', '주문내역' 2개로 분리되어 저장되고 있습니다.")
+
 
