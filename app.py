@@ -22,58 +22,60 @@ def get_google_client():
     return gspread.authorize(creds)
 
 # --- [핵심 로직 1] 회원 정보 관리 (수정된 안전 버전) ---
+# --- [핵심 로직 1] 회원 정보 관리 (한국 시간 적용) ---
 def update_member_info(phone, name, region, address):
     try:
         client = get_google_client()
         sheet = client.open("주문관리").worksheet("회원관리")
         
-        now = datetime.datetime.now().strftime("%Y-%m-%d")
+        # [수정됨] 여기도 9시간을 더해서 한국 날짜로 계산
+        now_utc = datetime.datetime.utcnow()
+        now_kst = now_utc + datetime.timedelta(hours=9)
+        today_kst = now_kst.strftime("%Y-%m-%d")
         
-        # 1. 이미 등록된 번호인지 찾기 (버전 오류 방지를 위한 안전한 방식)
         cell = None
         try:
-            cell = sheet.find(phone) # 전화번호로 검색 시도
+            cell = sheet.find(phone)
         except:
-            # 찾지 못해서 에러가 나면 그냥 '없음(None)'으로 처리하고 넘어감
             cell = None
 
         if cell:
-            # [기존 회원 발견] -> 정보 업데이트
-            # cell.row는 찾은 행 번호
-            sheet.update_cell(cell.row, 2, name)    # 이름
-            sheet.update_cell(cell.row, 3, region)  # 지역
-            sheet.update_cell(cell.row, 4, address) # 주소
-            sheet.update_cell(cell.row, 5, now)     # 최근주문일
+            # [기존 회원]
+            sheet.update_cell(cell.row, 2, name)
+            sheet.update_cell(cell.row, 3, region)
+            sheet.update_cell(cell.row, 4, address)
+            sheet.update_cell(cell.row, 5, today_kst) # 한국 날짜
             return "updated"
         else:
-            # [신규 회원] -> 없으니까 맨 아래에 추가
-            # 순서: 전화번호, 이름, 지역, 주소, 최근주문일, 가입일
-            sheet.append_row([phone, name, region, address, now, now])
+            # [신규 회원]
+            sheet.append_row([phone, name, region, address, today_kst, today_kst])
             return "new"
             
     except Exception as e:
-        # 진짜 시스템 에러인 경우에만 메시지 리턴
         return str(e)
 
 # --- [핵심 로직 2] 주문 내역 저장 (가볍게 저장) ---
+def # --- [핵심 로직 2] 주문 내역 저장 (한국 시간 적용) ---
 def add_orders(phone, orders_data):
     try:
         client = get_google_client()
         sheet = client.open("주문관리").worksheet("주문내역")
         
-        now_full = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # [수정됨] 서버 시간(UTC)에 9시간을 더해 한국 시간(KST) 만들기
+        now_utc = datetime.datetime.utcnow()
+        now_kst = now_utc + datetime.timedelta(hours=9)
+        now_full = now_kst.strftime("%Y-%m-%d %H:%M:%S")
         
         rows_to_add = []
         for order in orders_data:
-            # 주문ID 생성 (날짜+시간+번호뒷자리) - 유니크하게 만들기 위함
-            order_id = datetime.datetime.now().strftime("%y%m%d%H%M%S") + phone[-4:]
+            # 주문ID 생성 (한국시간 기준 날짜+시간+번호뒷자리)
+            order_id = now_kst.strftime("%y%m%d%H%M%S") + phone[-4:]
             
             # 순서: 주문ID, 전화번호, 배송희망일, 무, 가, 베, 그, 주문일시
-            # (이름, 주소는 저장 안 함! 전화번호로 연결됨)
             row = [
                 order_id, phone, order['date'],
                 order['moo'], order['ga'], order['berry'], order['greek'],
-                now_full
+                now_full # 한국 시간 저장
             ]
             rows_to_add.append(row)
             
@@ -239,6 +241,7 @@ with tab2:
             st.dataframe(df)
             
             st.info("💡 팁: 실제 엑셀 시트는 '회원관리'와 '주문내역'으로 나뉘어 있지만, 여기서는 합쳐서 보여줍니다.")
+
 
 
 
