@@ -54,8 +54,7 @@ def update_member_info(phone, name, region, address):
             
     except Exception as e:
         return str(e)
-
-# --- [핵심 로직 2] 주문 내역 저장 (한국 시간 적용) ---
+         # --- [핵심 로직 2] 주문 내역 저장 (한국 시간 적용) ---
 def add_orders(phone, orders_data):
     try:
         client = get_google_client()
@@ -83,7 +82,6 @@ def add_orders(phone, orders_data):
         return True
     except Exception as e:
         return str(e)
-
 # --- [핵심 로직 3] 관리자용 조회 (조인: 두 시트를 합쳐서 보여줌) ---
 def get_joined_data():
     client = get_google_client()
@@ -241,6 +239,7 @@ with tab2:
             st.dataframe(df)
             
             st.info("💡 팁: 실제 엑셀 시트는 '회원관리'와 '주문내역'으로 나뉘어 있지만, 여기서는 합쳐서 보여줍니다.")
+
 
 
 
