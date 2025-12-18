@@ -4,6 +4,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import datetime
 import pandas as pd
 import time
+import re
 
 # ==========================================
 # 1. 기본 설정 및 인증
@@ -23,7 +24,18 @@ def get_google_client():
         # 로컬 테스트용 (내 컴퓨터)
         creds = ServiceAccountCredentials.from_json_keyfile_name("gsheet_key.json", scope)
     return gspread.authorize(creds)
-
+    
+# 전화번호 형식을 010-0000-0000 으로 통일해주는 함수
+def normalize_phone(raw_phone):
+    # 1. 숫자 외의 모든 문자 제거 (하이픈, 공백 등 다 삭제)
+    only_digits = re.sub(r'[^0-9]', '', str(raw_phone))
+    
+    # 2. 010으로 시작하는 11자리 번호라면 하이픈(-)을 예쁘게 넣어줌
+    if len(only_digits) == 11 and only_digits.startswith("010"):
+        return f"{only_digits[:3]}-{only_digits[3:7]}-{only_digits[7:]}"
+    
+    # 그 외(02번호 등)는 그냥 숫자만 반환하거나 그대로 둠
+    return only_digits
 # ==========================================
 # 2. 데이터 처리 함수 (핵심 로직)
 # ==========================================
@@ -259,3 +271,4 @@ with tab2:
             
             st.divider()
             st.info("💡 엑셀 시트는 '회원관리', '주문내역' 2개로 분리되어 저장되고 있습니다.")
+
