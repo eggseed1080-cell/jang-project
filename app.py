@@ -2,140 +2,187 @@ import streamlit as st
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import datetime
+import pandas as pd
+import time
 
 # ==========================================
-# 1. 구글 시트 연동 설정
+# 1. 설정 및 DB 연결 함수
 # ==========================================
+st.set_page_config(page_title="장건강 프로젝트", page_icon="🌿", layout="wide")
+
 def get_google_client():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    
-    # 1. 스트림릿 클라우드의 비밀 금고(secrets)에서 키를 가져옴
-    # (로컬에서 실행할 때는 .streamlit/secrets.toml 파일이 필요하거나, 기존 json 방식을 써야 함)
     try:
-        # 배포용 코드
+        # Streamlit Cloud 배포용
         key_dict = st.secrets["gcp_service_account"]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(key_dict, scope)
     except:
-        # 로컬 테스트용 (내 컴퓨터에서 돌릴 때)
+        # 로컬 테스트용
         creds = ServiceAccountCredentials.from_json_keyfile_name("gsheet_key.json", scope)
-        
     return gspread.authorize(creds)
 
-def add_batch_to_sheet(rows_data):
+# --- [핵심 로직 1] 회원 정보 관리 (저장 및 업데이트) ---
+def update_member_info(phone, name, region, address):
     try:
         client = get_google_client()
-        sheet = client.open("주문관리").worksheet("택배주문")
-        sheet.append_rows(rows_data) # 여러 줄 한방에 저장
+        sheet = client.open("주문관리").worksheet("회원관리")
+        
+        now = datetime.datetime.now().strftime("%Y-%m-%d")
+        
+        # 1. 이미 등록된 번호인지 찾기
+        try:
+            cell = sheet.find(phone) # 전화번호로 검색
+            # [기존 회원] -> 주소와 지역, 최근주문일 업데이트
+            # cell.row는 찾은 행 번호
+            sheet.update_cell(cell.row, 2, name)    # 이름 업데이트 (혹시 개명했을수도 있으니)
+            sheet.update_cell(cell.row, 3, region)  # 지역 업데이트
+            sheet.update_cell(cell.row, 4, address) # 주소 업데이트 (이사 갔을 수 있음)
+            sheet.update_cell(cell.row, 5, now)     # 최근주문일 갱신
+            return "updated"
+        except gspread.exceptions.CellNotFound:
+            # [신규 회원] -> 맨 아래에 추가
+            # 순서: 전화번호, 이름, 지역, 주소, 최근주문일, 가입일
+            sheet.append_row([phone, name, region, address, now, now])
+            return "new"
+            
+    except Exception as e:
+        return str(e)
+
+# --- [핵심 로직 2] 주문 내역 저장 (가볍게 저장) ---
+def add_orders(phone, orders_data):
+    try:
+        client = get_google_client()
+        sheet = client.open("주문관리").worksheet("주문내역")
+        
+        now_full = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        rows_to_add = []
+        for order in orders_data:
+            # 주문ID 생성 (날짜+시간+번호뒷자리) - 유니크하게 만들기 위함
+            order_id = datetime.datetime.now().strftime("%y%m%d%H%M%S") + phone[-4:]
+            
+            # 순서: 주문ID, 전화번호, 배송희망일, 무, 가, 베, 그, 주문일시
+            # (이름, 주소는 저장 안 함! 전화번호로 연결됨)
+            row = [
+                order_id, phone, order['date'],
+                order['moo'], order['ga'], order['berry'], order['greek'],
+                now_full
+            ]
+            rows_to_add.append(row)
+            
+        sheet.append_rows(rows_to_add)
         return True
     except Exception as e:
         return str(e)
 
-# ==========================================
-# 2. 화면 구성 (UI)
-# ==========================================
-st.set_page_config(page_title="장건강 프로젝트 정기주문", page_icon="🌿", layout="wide")
-
-st.title("🌿 장건강 정기배송 신청")
-st.markdown("시작일만 선택하면 **4주치 스케줄**이 자동으로 생성됩니다!")
-
-# --- [1] 고객 정보 입력 ---
-with st.container():
-    st.subheader("👤 고객 정보")
-    col1, col2 = st.columns(2)
-    with col1:
-        region = st.text_input("지역 (필수)", placeholder="예: 서울 강남")
-        name = st.text_input("이름 (필수)", placeholder="홍길동")
-    with col2:
-        phone = st.text_input("전화번호", placeholder="010-1234-5678")
-        address = st.text_input("상세 주소", placeholder="아파트 동호수까지 정확히")
-
-# --- [2] 스케줄 설정 ---
-st.divider()
-st.subheader("🗓️ 배송 스케줄 설정")
-
-col_date, col_check = st.columns([1, 2])
-with col_date:
-    start_date = st.date_input("배송 시작일 선택", datetime.date.today())
-with col_check:
-    st.write("") 
-    st.write("") 
-    # 체크박스: 1주차 내용으로 통일하기
-    copy_week1 = st.checkbox("✅ 1주차 주문 내용을 4주 내내 동일하게 적용하기", value=True)
-
-# --- [3] 주차별 주문 입력 (4주치) ---
-st.divider()
-weeks_data = [] # 입력된 데이터를 모을 리스트
-
-# 4주치 루프 돌리기
-for i in range(4):
-    week_num = i + 1
-    # 날짜 자동 계산 (시작일 + 7일씩 증가)
-    target_date = start_date + datetime.timedelta(weeks=i)
-    target_date_str = target_date.strftime("%Y-%m-%d")
+# --- [핵심 로직 3] 관리자용 조회 (조인: 두 시트를 합쳐서 보여줌) ---
+def get_joined_data():
+    client = get_google_client()
+    # 두 시트를 다 가져옴
+    sheet_orders = client.open("주문관리").worksheet("주문내역")
+    sheet_members = client.open("주문관리").worksheet("회원관리")
     
-    with st.expander(f"📦 {week_num}주차 배송 ({target_date_str})", expanded=(i==0)):
-        c1, c2, c3, c4 = st.columns(4)
-        
-        # 1주차가 아니고 + '동일 적용' 체크되어 있으면 -> 1주차 값을 그대로 보여줌 (비활성화)
-        disabled_status = (copy_week1 and i > 0)
-        
-        # 키(key)를 다르게 줘야 에러가 안 남
-        if disabled_status:
-            # 1주차(weeks_data[0])의 값을 가져와서 표시만 함
-            ref_data = weeks_data[0]
-            qty_moo = st.number_input(f"무가당 2L ({week_num}주)", value=ref_data['moo'], disabled=True, key=f"w{i}_moo")
-            qty_ga = st.number_input(f"가당 2L ({week_num}주)", value=ref_data['ga'], disabled=True, key=f"w{i}_ga")
-            qty_berry = st.number_input(f"베리 500ml ({week_num}주)", value=ref_data['berry'], disabled=True, key=f"w{i}_berry")
-            qty_greek = st.number_input(f"그릭 300g ({week_num}주)", value=ref_data['greek'], disabled=True, key=f"w{i}_greek")
-        else:
-            # 직접 입력
-            qty_moo = st.number_input("무가당 2L", min_value=0, value=0, key=f"w{i}_moo")
-            qty_ga = st.number_input("가당 2L", min_value=0, value=0, key=f"w{i}_ga")
-            qty_berry = st.number_input("베리 500ml", min_value=0, value=0, key=f"w{i}_berry")
-            qty_greek = st.number_input("그릭 300g", min_value=0, value=0, key=f"w{i}_greek")
+    df_orders = pd.DataFrame(sheet_orders.get_all_values()[1:], columns=sheet_orders.get_all_values()[0])
+    df_members = pd.DataFrame(sheet_members.get_all_values()[1:], columns=sheet_members.get_all_values()[0])
+    
+    # 전화번호를 기준으로 합치기 (VLOOKUP과 같은 원리)
+    # orders 테이블에 members 테이블을 붙임
+    if not df_orders.empty and not df_members.empty:
+        merged_df = pd.merge(df_orders, df_members, on="전화번호", how="left")
+        return merged_df
+    return df_orders
 
-        # 데이터 임시 저장
-        weeks_data.append({
-            'date': target_date_str,
-            'moo': qty_moo, 'ga': qty_ga, 'berry': qty_berry, 'greek': qty_greek
-        })
+# ==========================================
+# 2. 화면 구성
+# ==========================================
+tab1, tab2 = st.tabs(["📝 주문하기", "🔒 관리자(통합조회)"])
 
-# --- [4] 최종 제출 버튼 ---
-st.divider()
-submit_btn = st.button("🚀 4주치 스케줄 한 번에 저장하기", type="primary", use_container_width=True)
+with tab1:
+    st.title("🌿 장건강 정기배송 (DB분리형)")
+    st.info("고객님은 주문만 하세요. 회원 정보 관리는 알아서 됩니다!")
+    
+    with st.container(border=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            region = st.text_input("지역", placeholder="예: 서울 강남")
+            name = st.text_input("이름", placeholder="홍길동")
+        with col2:
+            phone = st.text_input("전화번호 (필수/ID)", placeholder="010-0000-0000")
+            address = st.text_input("주소 (배송지)", placeholder="상세 주소 입력")
 
-if submit_btn:
-    if not name or not region or not address:
-        st.error("🚨 지역, 이름, 주소는 필수 입력 항목입니다!")
-    else:
-        # 저장할 데이터 리스트 만들기
-        final_rows = []
-        now_date = datetime.datetime.now().strftime("%Y-%m-%d")
-        now_time = datetime.datetime.now().strftime("%H:%M:%S")
+    st.subheader("🗓️ 스케줄 설정")
+    c_date, c_chk = st.columns([1,2])
+    with c_date:
+        start_date = st.date_input("시작일", datetime.date.today())
+    with c_chk:
+        st.write("")
+        st.write("")
+        copy_week1 = st.checkbox("✅ 1주차 동일 적용", value=True)
 
-        count_total = 0
-        
-        for data in weeks_data:
-            # 수량이 하나라도 있는 주차만 저장
-            if (data['moo'] + data['ga'] + data['berry'] + data['greek']) > 0:
-                # 엑셀 순서: [작성일, 시간, 배송일, 지역, 이름, 주소, 번호, 무, 가, 베, 그]
-                row = [
-                    now_date, now_time, data['date'], 
-                    region, name, address, phone,
-                    data['moo'], data['ga'], data['berry'], data['greek']
-                ]
-                final_rows.append(row)
-                count_total += 1
-        
-        if count_total == 0:
-            st.warning("🤔 선택된 상품이 하나도 없습니다.")
-        else:
-            with st.spinner("엑셀에 저장 중입니다..."):
-                res = add_batch_to_sheet(final_rows)
-                
-            if res == True:
-                st.success(f"🎉 저장 완료! 총 {count_total}건의 주문이 등록되었습니다.")
-                st.balloons()
+    weeks_data = []
+    for i in range(4):
+        w_num = i+1
+        t_date = (start_date + datetime.timedelta(weeks=i)).strftime("%Y-%m-%d")
+        with st.expander(f"{w_num}주차 ({t_date})", expanded=(i==0)):
+            c1, c2, c3, c4 = st.columns(4)
+            disabled = (copy_week1 and i > 0)
+            
+            if disabled:
+                ref = weeks_data[0]
+                m = st.number_input(f"무({w_num})", value=ref['moo'], disabled=True, key=f"d_m{i}")
+                g = st.number_input(f"가({w_num})", value=ref['ga'], disabled=True, key=f"d_g{i}")
+                b = st.number_input(f"베({w_num})", value=ref['berry'], disabled=True, key=f"d_b{i}")
+                k = st.number_input(f"그({w_num})", value=ref['greek'], disabled=True, key=f"d_k{i}")
             else:
+                m = st.number_input("무가당", min_value=0, key=f"m{i}")
+                g = st.number_input("가당", min_value=0, key=f"g{i}")
+                b = st.number_input("베리", min_value=0, key=f"b{i}")
+                k = st.number_input("그릭", min_value=0, key=f"k{i}")
+            
+            weeks_data.append({'date':t_date, 'moo':m, 'ga':g, 'berry':b, 'greek':k})
 
-                st.error(f"저장 실패: {res}")
+    if st.button("🚀 주문 및 회원정보 저장", type="primary", use_container_width=True):
+        if not phone or not name or not address:
+            st.error("전화번호, 이름, 주소는 필수입니다!")
+        else:
+            with st.spinner("회원 정보 확인 및 주문 저장 중..."):
+                # 1. 회원 정보 업데이트 (혹은 신규등록)
+                mem_res = update_member_info(phone, name, region, address)
+                
+                # 2. 주문 데이터 추리기
+                valid_orders = []
+                for order in weeks_data:
+                    if (order['moo']+order['ga']+order['berry']+order['greek']) > 0:
+                        valid_orders.append(order)
+                
+                if not valid_orders:
+                    st.warning("상품을 선택해주세요.")
+                else:
+                    # 3. 주문 저장
+                    ord_res = add_orders(phone, valid_orders)
+                    
+                    if ord_res == True:
+                        msg = "🎉 주문 완료!"
+                        if mem_res == "new": msg += " (신규회원 등록됨)"
+                        elif mem_res == "updated": msg += " (회원정보 갱신됨)"
+                        st.success(msg)
+                        st.balloons()
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error(f"주문 저장 실패: {ord_res}")
+
+with tab2:
+    st.header("🔒 관리자 통합 조회")
+    pwd = st.text_input("비밀번호", type="password")
+    if pwd == "1234": # 비밀번호 설정
+        if st.button("🔄 데이터 불러오기"):
+            st.rerun()
+            
+        df = get_joined_data() # 여기서 두 시트를 합쳐서 가져옴
+        
+        if not df.empty:
+            st.subheader("📦 전체 주문 목록 (회원정보 결합됨)")
+            st.dataframe(df)
+            
+            st.info("💡 팁: 실제 엑셀 시트는 '회원관리'와 '주문내역'으로 나뉘어 있지만, 여기서는 합쳐서 보여줍니다.")
