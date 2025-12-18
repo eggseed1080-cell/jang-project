@@ -21,7 +21,7 @@ def get_google_client():
         creds = ServiceAccountCredentials.from_json_keyfile_name("gsheet_key.json", scope)
     return gspread.authorize(creds)
 
-# --- [핵심 로직 1] 회원 정보 관리 (저장 및 업데이트) ---
+# --- [핵심 로직 1] 회원 정보 관리 (수정된 안전 버전) ---
 def update_member_info(phone, name, region, address):
     try:
         client = get_google_client()
@@ -29,23 +29,30 @@ def update_member_info(phone, name, region, address):
         
         now = datetime.datetime.now().strftime("%Y-%m-%d")
         
-        # 1. 이미 등록된 번호인지 찾기
+        # 1. 이미 등록된 번호인지 찾기 (버전 오류 방지를 위한 안전한 방식)
+        cell = None
         try:
-            cell = sheet.find(phone) # 전화번호로 검색
-            # [기존 회원] -> 주소와 지역, 최근주문일 업데이트
+            cell = sheet.find(phone) # 전화번호로 검색 시도
+        except:
+            # 찾지 못해서 에러가 나면 그냥 '없음(None)'으로 처리하고 넘어감
+            cell = None
+
+        if cell:
+            # [기존 회원 발견] -> 정보 업데이트
             # cell.row는 찾은 행 번호
-            sheet.update_cell(cell.row, 2, name)    # 이름 업데이트 (혹시 개명했을수도 있으니)
-            sheet.update_cell(cell.row, 3, region)  # 지역 업데이트
-            sheet.update_cell(cell.row, 4, address) # 주소 업데이트 (이사 갔을 수 있음)
-            sheet.update_cell(cell.row, 5, now)     # 최근주문일 갱신
+            sheet.update_cell(cell.row, 2, name)    # 이름
+            sheet.update_cell(cell.row, 3, region)  # 지역
+            sheet.update_cell(cell.row, 4, address) # 주소
+            sheet.update_cell(cell.row, 5, now)     # 최근주문일
             return "updated"
-        except gspread.exceptions.CellNotFound:
-            # [신규 회원] -> 맨 아래에 추가
+        else:
+            # [신규 회원] -> 없으니까 맨 아래에 추가
             # 순서: 전화번호, 이름, 지역, 주소, 최근주문일, 가입일
             sheet.append_row([phone, name, region, address, now, now])
             return "new"
             
     except Exception as e:
+        # 진짜 시스템 에러인 경우에만 메시지 리턴
         return str(e)
 
 # --- [핵심 로직 2] 주문 내역 저장 (가볍게 저장) ---
@@ -194,4 +201,5 @@ with tab2:
             st.dataframe(df)
             
             st.info("💡 팁: 실제 엑셀 시트는 '회원관리'와 '주문내역'으로 나뉘어 있지만, 여기서는 합쳐서 보여줍니다.")
+
 
